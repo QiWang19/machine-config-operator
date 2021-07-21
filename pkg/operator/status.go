@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -245,6 +246,13 @@ func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 	return optr.updateStatus(co, coStatus)
 }
 
+const (
+	skewUnchecked   = "KubeletSkewUnchecked"
+	skewSupported   = "KubeletSkewSupported"
+	skewUnsupported = "KubeletSkewUnsupported"
+	skewPresent     = "KubeletSkewPresent"
+)
+
 // syncUpgradeableStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncUpgradeableStatus() error {
 	co, err := optr.fetchClusterOperator()
@@ -293,39 +301,59 @@ func (optr *Operator) syncUpgradeableStatus() error {
 
 	// don't overwrite status if updating or degraded
 	if !updating && !degraded {
-		if supported, v := optr.isKubeletSkewSupported(); !supported {
-			coStatus.Reason = "KubeletSkewUnsupported"
-			coStatus.Message = fmt.Sprintf("one or more nodes have an unsupported kubelet version skew. Please see `oc get nodes` for details and upgrade all nodes so that they have a kubelet Version of at least %v.", getMinimalSkewSupportNodeVersion(v))
+		skewStatus, status, err := optr.isKubeletSkewSupported(pools)
+		if err != nil {
+			coStatus.Reason = status.Reason
+			coStatus.Message = status.Message
+			return optr.updateStatus(co, coStatus)
+		}
+		glog.Infof("kubelet skew status: %v, status reason: %v, status message: %v", skewStatus, status.Reason, status.Message)
+		switch skewStatus {
+		case skewUnchecked:
+			coStatus.Reason = status.Reason
+			coStatus.Message = status.Message
+			return optr.updateStatus(co, coStatus)
+		case skewUnsupported:
+			coStatus.Reason = status.Reason
+			coStatus.Message = status.Message
 			mcoObjectRef := &corev1.ObjectReference{
 				Kind:      co.Kind,
 				Name:      co.Name,
 				Namespace: co.Namespace,
 				UID:       co.GetUID(),
 			}
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, "KubeletSkewUnsupported", fmt.Sprintf("machine config pool contains nodes with an unsupported kubelet version skew with kube-apiserver version %v.", v))
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatus.Reason, fmt.Sprintf("machine config pool contains nodes with an unsupported kubelet version skew."))
+			return optr.updateStatus(co, coStatus)
+		case skewPresent:
+			coStatus.Reason = status.Reason
+			coStatus.Message = status.Message
+			mcoObjectRef := &corev1.ObjectReference{
+				Kind:      co.Kind,
+				Name:      co.Name,
+				Namespace: co.Namespace,
+				UID:       co.GetUID(),
+			}
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatus.Reason, fmt.Sprintf("machine config pool contains nodes with an N-1 kubelet version skew."))
+			return optr.updateStatus(co, coStatus)
 		}
 	}
-
 	return optr.updateStatus(co, coStatus)
 }
 
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.
-// Returns false if the version skew is not supported. version skew > 2 is not supported.
-func (optr *Operator) isKubeletSkewSupported() (skewSupported bool, kubeAPIServerVersion string) {
-	skewSupported = true
-	nodes, err := optr.nodeLister.List(labels.Everything())
-	if err != nil {
-		return skewSupported, ""
-	}
+// Returns the skew status. version skew > 2 is not supported.
+func (optr *Operator) isKubeletSkewSupported(pools []*v1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
+	coStatus = configv1.ClusterOperatorStatusCondition{}
 	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "kube-apiserver", metav1.GetOptions{})
 	if err != nil {
-		return skewSupported, ""
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err)
+		return skewUnchecked, coStatus, err
 	}
-
 	// looks like
 	//   - name: kube-apiserver
 	//     version: 1.21.0-rc.0
-	kubeAPIServerVersion = ""
+	kubeAPIServerVersion := ""
 	for _, version := range kubeAPIServerStatus.Status.Versions {
 		if version.Name != "kube-apiserver" {
 			continue
@@ -334,30 +362,77 @@ func (optr *Operator) isKubeletSkewSupported() (skewSupported bool, kubeAPIServe
 		break
 	}
 	if kubeAPIServerVersion == "" {
-		return skewSupported, kubeAPIServerVersion
+		err = fmt.Errorf("kube-apiserver does not yet have a version")
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err.Error())
+		return skewUnchecked, coStatus, err
 	}
 	kubeAPIServerMinorVersion, err := getMinorKubeletVersion(kubeAPIServerVersion)
 	if err != nil {
-		return skewSupported, kubeAPIServerVersion
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err)
+		return skewUnchecked, coStatus, err
 	}
-
+	var (
+		lastError      error
+		kubeletVersion string
+	)
+	nodes, err := optr.GetAllManagedNodes(pools)
+	if err != nil {
+		err = fmt.Errorf("getting all managed nodes failed: %v", err)
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when getting all the managed nodes: %v", err.Error())
+	}
 	for _, node := range nodes {
 		// looks like kubeletVersion: v1.21.0-rc.0+6143dea
-		kubeletVersion := node.Status.NodeInfo.KubeletVersion
+		kubeletVersion = node.Status.NodeInfo.KubeletVersion
 		if kubeletVersion == "" {
 			continue
 		}
 		nodeMinorVersion, err := getMinorKubeletVersion(kubeletVersion)
 		if err != nil {
-			glog.Error(err)
+			lastError = err
 			continue
 		}
 		if nodeMinorVersion+2 < kubeAPIServerMinorVersion {
-			skewSupported = false
-			break
+			coStatus.Reason = skewUnsupported
+			coStatus.Message = fmt.Sprintf("One or more nodes have an unsupported kubelet version skew. Please see `oc get nodes` for details and upgrade all nodes so that they have a kubelet version of at least %v.", getMinimalSkewSupportNodeVersion(kubeAPIServerVersion))
+			return skewUnsupported, coStatus, nil
+		}
+		if nodeMinorVersion+2 == kubeAPIServerMinorVersion {
+			coStatus.Reason = skewPresent
+			coStatus.Message = fmt.Sprintf("Current kubelet version %v will not be supported by newer kube-apiserver. Please upgrade the the kubelet first if plan to upgrade the kube-apiserver", kubeletVersion)
+			return skewPresent, coStatus, nil
 		}
 	}
-	return skewSupported, kubeAPIServerVersion
+	if kubeletVersion == "" {
+		err = fmt.Errorf("kubelet does not yet have a version")
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err.Error())
+		return skewUnchecked, coStatus, err
+	}
+	if lastError != nil {
+		coStatus.Reason = skewUnchecked
+		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err)
+		return skewUnchecked, coStatus, lastError
+	}
+	return skewSupported, coStatus, nil
+}
+
+func (optr *Operator) GetAllManagedNodes(pools []*v1.MachineConfigPool) ([]*corev1.Node, error) {
+	nodes := []*corev1.Node{}
+	for _, pool := range pools {
+		selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
+		if err != nil {
+			return nil, fmt.Errorf("label selector for pool %v failed %v", pool.Name, err)
+		}
+		poolNodes, err := optr.nodeLister.List(selector)
+		if err != nil {
+			return nil, fmt.Errorf("could not list nodes for pool %v with error %v", pool.Name, err)
+		}
+		nodes = append(nodes, poolNodes...)
+	}
+	return nodes, nil
 }
 
 // getMinorKubeletVersion parses the minor version number of kubelet
