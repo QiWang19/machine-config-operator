@@ -362,17 +362,17 @@ func updateSearchRegistriesConfig(searchRegs []string) []generatedConfigFile {
 	return generatedConfigFileList
 }
 
-func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
+func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) ([]byte, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %w", err)
 	}
 
-	if err := validateRegistriesConfScopes(internalInsecure, internalBlocked, []string{}, icspRules); err != nil {
+	if err := validateRegistriesConfScopes(internalInsecure, internalBlocked, []string{}, icspRules, idmsRules, itmsRules); err != nil {
 		return nil, err
 	}
 
-	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, icspRules); err != nil {
+	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, icspRules, idmsRules, itmsRules); err != nil {
 		return nil, err
 	}
 
@@ -408,7 +408,7 @@ func updatePolicyJSON(data []byte, internalBlocked, internalAllowed []string, re
 		return data, nil
 	}
 
-	if err := validateRegistriesConfScopes([]string{}, internalBlocked, internalAllowed, nil); err != nil {
+	if err := validateRegistriesConfScopes([]string{}, internalBlocked, internalAllowed, nil, nil, nil); err != nil {
 		return nil, err
 	}
 
@@ -614,7 +614,7 @@ func getPayloadRepo(releaseImage string) (reference.Named, error) {
 	return ref, nil
 }
 
-func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
+func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) error {
 	for _, scope := range insecure {
 		if !registries.IsValidRegistriesConfScope(scope) {
 			return fmt.Errorf("invalid entry for insecure registries %q", scope)
@@ -651,6 +651,43 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 			}
 		}
 
+	}
+
+	sourcePolicy := map[string]apicfgv1.MirrorSourcePolicy{}
+	validateMirrors := func(source string, mirrors []apicfgv1.ImageMirror, policy apicfgv1.MirrorSourcePolicy) error {
+		if policy == "" {
+			return nil
+		}
+		if p, ok := sourcePolicy[source]; ok {
+			if policy != p {
+				return fmt.Errorf("conflicting mirrorSourcePolicy is set for the same source %q in imagedigestmirrorsets and imagetagmirrorsets", source)
+			}
+		} else {
+			sourcePolicy[source] = policy
+		}
+
+		for _, mirror := range mirrors {
+			if policy == apicfgv1.NeverContactSource && string(mirror) == source {
+				return fmt.Errorf("cannot set mirrorSourcePolicy: NeverContactSource if the source %q is one of the mirrors", source)
+			}
+		}
+		return nil
+	}
+
+	for _, idms := range idmsRules {
+		for _, mirrorSet := range idms.Spec.ImageDigestMirrors {
+			if err := validateMirrors(mirrorSet.Source, mirrorSet.Mirrors, mirrorSet.MirrorSourcePolicy); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, itms := range itmsRules {
+		for _, mirrorSet := range itms.Spec.ImageTagMirrors {
+			if err := validateMirrors(mirrorSet.Source, mirrorSet.Mirrors, mirrorSet.MirrorSourcePolicy); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
