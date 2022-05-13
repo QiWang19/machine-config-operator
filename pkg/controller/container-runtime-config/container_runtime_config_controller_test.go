@@ -409,7 +409,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
 	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
-	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, icsps)
+	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, icsps, idmss, itmss)
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
 		blockedRegistries, icsps, idmss, itmss)

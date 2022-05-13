@@ -767,30 +767,6 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
-	var (
-		registriesBlocked, policyBlocked, allowedRegs []string
-		releaseImage                                  string
-	)
-	if clusterVersionCfg != nil {
-		// The possibility of releaseImage being "" is very unlikely, will only happen if clusterVersionCfg is nil. If this happens
-		// then there is something very wrong with the cluster and in that situation it would be best to fail here till clusterVersionCfg
-		// has been recovered
-		releaseImage = clusterVersionCfg.Status.Desired.Image
-		// Go through the registries in the image spec to get and validate the blocked registries
-		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, icspRules)
-		if err != nil && err != errParsingReference {
-			glog.V(2).Infof("%v, skipping....", err)
-		} else if err == errParsingReference {
-			return err
-		}
-	}
-
-	// Get ControllerConfig
-	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %w", err)
-	}
-
 	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
 	if err != nil && errors.IsNotFound(err) {
 		idmsRules = []*apicfgv1.ImageDigestMirrorSet{}
@@ -803,6 +779,30 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		itmsRules = []*apicfgv1.ImageTagMirrorSet{}
 	} else if err != nil {
 		return err
+	}
+
+	var (
+		registriesBlocked, policyBlocked, allowedRegs []string
+		releaseImage                                  string
+	)
+	if clusterVersionCfg != nil {
+		// The possibility of releaseImage being "" is very unlikely, will only happen if clusterVersionCfg is nil. If this happens
+		// then there is something very wrong with the cluster and in that situation it would be best to fail here till clusterVersionCfg
+		// has been recovered
+		releaseImage = clusterVersionCfg.Status.Desired.Image
+		// Go through the registries in the image spec to get and validate the blocked registries
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, icspRules, idmsRules, itmsRules)
+		if err != nil && err != errParsingReference {
+			glog.V(2).Infof("%v, skipping....", err)
+		} else if err == errParsingReference {
+			return err
+		}
+	}
+
+	// Get ControllerConfig
+	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
@@ -952,7 +952,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	if imgCfg != nil {
 		insecureRegs = imgCfg.Spec.RegistrySources.InsecureRegistries
 		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
-		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, icspRules)
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, icspRules, idmsRules, itmsRules)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {

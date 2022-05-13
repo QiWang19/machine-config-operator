@@ -840,7 +840,7 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRegistries, gotPolicy, gotAllowed, err := getValidBlockedAndAllowedRegistries(tt.releaseImg, tt.imgSpec, tt.icspRules)
+			gotRegistries, gotPolicy, gotAllowed, err := getValidBlockedAndAllowedRegistries(tt.releaseImg, tt.imgSpec, tt.icspRules, nil, nil)
 			if (err != nil && !tt.expectedErr) || (err == nil && tt.expectedErr) {
 				t.Errorf("getValidBlockedRegistries() error = %v", err)
 				return

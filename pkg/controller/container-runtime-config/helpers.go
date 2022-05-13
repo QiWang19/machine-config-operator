@@ -372,7 +372,7 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 		return nil, err
 	}
 
-	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, icspRules, idmsRules, itmsRules); err != nil {
+	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, idmsRules, itmsRules); err != nil {
 		return nil, err
 	}
 
@@ -495,7 +495,7 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 // the registry being used by the payload to the list of blocked registries.
 // If the user is, we drop that registry and continue with syncing the registries.conf with the other registry options
 // This returns the blocked list for registries.conf and policy.json separately as well as the allowed list for policy.json
-func getValidBlockedAndAllowedRegistries(releaseImage string, imgSpec *apicfgv1.ImageSpec, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (registriesBlocked, policyBlocked, allowed []string, retErr error) {
+func getValidBlockedAndAllowedRegistries(releaseImage string, imgSpec *apicfgv1.ImageSpec, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) (registriesBlocked, policyBlocked, allowed []string, retErr error) {
 	if imgSpec == nil {
 		return nil, nil, nil, nil
 	}
@@ -512,7 +512,7 @@ func getValidBlockedAndAllowedRegistries(releaseImage string, imgSpec *apicfgv1.
 		// if there is a match, return all the blocked registries except those that matched and return an error as well
 		if runtimeutils.ScopeIsNestedInsideScope(payloadRepo, reg) {
 			// If the payload registry doesn't have mirror rules configured for it, then don't add it to the blocked registries list
-			hasMirror, err := payloadRepoHasUnblockedMirror(ref, icspRules, imgSpec)
+			hasMirror, err := payloadRepoHasUnblockedMirror(ref, icspRules, imgSpec, idmsRules, itmsRules)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -545,9 +545,9 @@ func getValidBlockedAndAllowedRegistries(releaseImage string, imgSpec *apicfgv1.
 }
 
 // payloadRepoHasUnblockedMirror returns true if the payload registry has mirror rules configured for it
-func payloadRepoHasUnblockedMirror(payloadRepo reference.Named, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgSpec *apicfgv1.ImageSpec) (bool, error) {
+func payloadRepoHasUnblockedMirror(payloadRepo reference.Named, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgSpec *apicfgv1.ImageSpec, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) (bool, error) {
 	// Create a temp registries.conf file with all the registry inputs given
-	tmpFile, err := createTempRegistriesFile(icspRules, imgSpec)
+	tmpFile, err := createTempRegistriesFile(icspRules, imgSpec, idmsRules, itmsRules)
 	if err != nil {
 		return false, err
 	}
@@ -581,9 +581,9 @@ func payloadRepoHasUnblockedMirror(payloadRepo reference.Named, icspRules []*api
 }
 
 // createTempRegistriesFile creates a temporary registries config file to be used in determining the valid blocked and allowed registries
-func createTempRegistriesFile(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgSpec *apicfgv1.ImageSpec) (*os.File, error) {
+func createTempRegistriesFile(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgSpec *apicfgv1.ImageSpec, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) (*os.File, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
-	if err := registries.EditRegistriesConfig(&tomlConf, imgSpec.RegistrySources.InsecureRegistries, imgSpec.RegistrySources.BlockedRegistries, icspRules); err != nil {
+	if err := registries.EditRegistriesConfig(&tomlConf, imgSpec.RegistrySources.InsecureRegistries, imgSpec.RegistrySources.BlockedRegistries, idmsRules, itmsRules); err != nil {
 		return nil, err
 	}
 	var newData bytes.Buffer
