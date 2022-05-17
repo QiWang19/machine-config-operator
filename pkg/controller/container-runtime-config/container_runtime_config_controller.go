@@ -716,6 +716,18 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
+	idmsFromICSP := convertICSPtoIDMS(icspRules, []*apicfgv1.ImageDigestMirrorSet{})
+	idmsClient := NewIDMSClient()
+	for _, idms := range idmsFromICSP {
+		glog.Info("Calling create idms: ", idms.Name)
+		resp, err := idmsClient.ImageDigestMirrorSets("default").Create(context.TODO(), idms)
+		if err != nil {
+			fmt.Printf("error while creating object: %v\n", err)
+		} else {
+			fmt.Printf("object created: %v\n", resp)
+		}
+	}
+
 	var (
 		registriesBlocked, policyBlocked, allowedRegs []string
 		releaseImage                                  string
