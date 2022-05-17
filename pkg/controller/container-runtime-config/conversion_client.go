@@ -8,6 +8,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 )
 
@@ -86,6 +87,7 @@ func NewClient(cfg *rest.Config) (*ImageDigestMirrorSetV1Alpha1Client, error) {
 	config.GroupVersion = &SchemeGroupVersion
 	config.APIPath = "/apis"
 	config.ContentType = runtime.ContentTypeJSON
+	config.NegotiatedSerializer = serializer.NewCodecFactory(scheme)
 	client, err := rest.RESTClientFor(&config)
 	if err != nil {
 		return nil, err
