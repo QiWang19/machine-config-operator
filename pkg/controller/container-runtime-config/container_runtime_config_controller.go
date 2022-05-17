@@ -723,7 +723,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// I0517 01:54:12.815467       1 container_runtime_config_controller.go:722] Calling create idms: ubi8repo-icsp
 		// error while creating object: imagedigestmirrorsets.config.openshift.io is forbidden: User "system:serviceaccount:openshift-machine-config-operator:machine-config-controller" cannot create resource "imagedigestmirrorsets" in API group "config.openshift.io" in the namespace "default"
 
-		resp, err := idmsClient.ImageDigestMirrorSets("").Create(context.TODO(), idms)
+		resp, err := idmsClient.ImageDigestMirrorSets("openshift-machine-config-operator").Create(context.TODO(), idms)
 		if err != nil {
 			fmt.Printf("error while creating object: %v\n", err)
 		} else {

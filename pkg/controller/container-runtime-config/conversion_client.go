@@ -40,7 +40,7 @@ func (c *ImageDigestMirrorSetV1Alpha1Client) ImageDigestMirrorSets(namespace str
 func (c *imageDigestMirrorSetClient) Create(ctx context.Context, obj *apicfgv1.ImageDigestMirrorSet) (*apicfgv1.ImageDigestMirrorSet, error) {
 	result := &apicfgv1.ImageDigestMirrorSet{}
 	err := c.client.Post().
-		Resource("imagedigestmirrorsets").
+		Namespace(c.ns).Resource("imagedigestmirrorsets").
 		Body(obj).Do(ctx).Into(result)
 	return result, err
 }
