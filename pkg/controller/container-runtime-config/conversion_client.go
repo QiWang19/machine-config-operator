@@ -87,6 +87,7 @@ func NewClient(cfg *rest.Config) (*ImageDigestMirrorSetV1Alpha1Client, error) {
 	config.GroupVersion = &SchemeGroupVersion
 	config.APIPath = "/apis"
 	config.ContentType = runtime.ContentTypeJSON
+	config.UserAgent = rest.DefaultKubernetesUserAgent()
 	config.NegotiatedSerializer = serializer.NewCodecFactory(scheme)
 	client, err := rest.RESTClientFor(&config)
 	if err != nil {
