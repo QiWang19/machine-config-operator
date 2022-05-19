@@ -691,3 +691,37 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 	}
 	return nil
 }
+
+func convertICSPtoIDMS(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet) []*apicfgv1.ImageDigestMirrorSet {
+	if len(icspRules) == 0 {
+		return idmsRules
+	}
+
+	for _, icsp := range icspRules {
+		var imageDigestMirrors []apicfgv1.ImageDigestMirrors
+
+		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+			var mirrors []apicfgv1.ImageMirror
+			for _, mirror := range mirrorSet.Mirrors {
+				mirrors = append(mirrors, apicfgv1.ImageMirror(mirror))
+			}
+			imageDigestMirror := apicfgv1.ImageDigestMirrors{
+				Source:  mirrorSet.Source,
+				Mirrors: mirrors,
+			}
+			imageDigestMirrors = append(imageDigestMirrors, imageDigestMirror)
+		}
+		idmsRule := &apicfgv1.ImageDigestMirrorSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: icsp.Name,
+			},
+			Spec: apicfgv1.ImageDigestMirrorSetSpec{
+				ImageDigestMirrors: imageDigestMirrors,
+			},
+		}
+		idmsRules = append(idmsRules, idmsRule)
+	}
+
+	return idmsRules
+}

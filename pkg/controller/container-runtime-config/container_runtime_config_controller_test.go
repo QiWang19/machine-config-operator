@@ -412,7 +412,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, icsps, idmss, itmss)
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
-		blockedRegistries, icsps, idmss, itmss)
+		registriesBlocked, icsps, idmss, itmss)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
@@ -497,7 +497,6 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
-			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
@@ -534,7 +533,6 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
-			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
@@ -1171,7 +1169,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range failureTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
-		registriesBlocked, _, _, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
+		registriesBlocked, _, _, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules, nil, nil)
 		if err == nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -1186,7 +1184,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range successTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
-		registriesBlocked, policyBlocked, allowed, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
+		registriesBlocked, policyBlocked, allowed, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules, nil, nil)
 		if err != nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -1387,7 +1385,6 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.expectGetMachineConfigAction(mcs)
 				f.expectGetMachineConfigAction(mcsDeprecated)
 				f.expectGetMachineConfigAction(mcs)
-				f.expectUpdateContainerRuntimeConfigRoot(ccr)
 				f.expectCreateMachineConfigAction(mcs)
 				f.expectPatchContainerRuntimeConfig(ccr, []byte(expectedPatch))
 				f.expectUpdateContainerRuntimeConfig(ccr)
