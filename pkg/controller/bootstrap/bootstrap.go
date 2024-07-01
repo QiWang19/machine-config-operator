@@ -175,6 +175,10 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
+	featureGates, err := fgAccess.CurrentFeatureGates()
+	if err != nil {
+		klog.Fatalf("error getting current featuregates: %v, %v", featureGates, err)
+	}
 	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, fgAccess)
 	if err != nil {
 		return err
