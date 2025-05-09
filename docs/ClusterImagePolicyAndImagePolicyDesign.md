@@ -79,7 +79,7 @@ The ContainerRuntimeConfigController would perform the following steps:
 
 3. Serialize the cluster level policies to `policy.json`.
 
-4. Serialize the namespace level policies to `/etc/crio/<NAMESPACE>.json`.
+4. Serialize the namespace level policies to `/etc/crio/policies/<NAMESPACE>.json`.
 
 4. Add registries configuration to `sigstore-registries.yaml`. This configuration is used to specify the sigstore is being used as the image signature verification backend. 
 
