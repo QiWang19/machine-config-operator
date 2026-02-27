@@ -1662,3 +1662,35 @@ func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *
 	})
 	return &credProviderConfigIgn, nil
 }
+
+func RunCRIOCredentialProviderConfigBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+
+		managedKeyCredentialProvider, err := getManagedKeyCRIOCredentialProvider(pool)
+		if err != nil {
+			return nil, err
+		}
+
+		credentialProviderConfigIgn, err := crioCredentialProviderConfigIgnition(templateDir, controllerConfig, role, crioCredentialProviderConfig)
+		if err != nil {
+			return nil, err
+		}
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKeyCredentialProvider, credentialProviderConfigIgn)
+		if err != nil {
+			return nil, err
+		}
+		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: apicfgv1.SchemeGroupVersion.String(),
+				Kind:       "CRIOCredentialProviderConfig",
+				// Name and UID is not set, the first run of syncCRIOCredentialProviderConfig will overwrite these values.
+			},
+		}
+		res = append(res, mc)
+	}
+
+	return res, nil
+}
