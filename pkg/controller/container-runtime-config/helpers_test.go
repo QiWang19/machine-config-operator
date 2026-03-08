@@ -2355,6 +2355,16 @@ providers:
 		expectedConfig *credentialProviderConfigWithVersion
 	}{
 		{
+			name:           "add crio-credential-provider when config is nil",
+			matchImages:    nil,
+			templateConfig: nil,
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers:  []*credentialProviderWithTag{},
+			},
+		},
+		{
 			name:           "add crio-credential-provider when template config is nil",
 			matchImages:    []string{"myhost.com", "quay.io"},
 			templateConfig: nil,

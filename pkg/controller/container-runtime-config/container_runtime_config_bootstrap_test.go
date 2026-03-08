@@ -55,3 +55,125 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 		})
 	}
 }
+
+func TestRunCRIOCredentialProviderConfigBootstrap(t *testing.T) {
+	// Test cloud platforms and None platform with match images specified, which should generate the CRIOCredentialProviderConfig with the expected contents
+	platforms := []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
+		apicfgv1.GCPPlatformType,
+		apicfgv1.AzurePlatformType,
+		apicfgv1.NonePlatformType,
+	}
+	for _, platform := range platforms {
+		t.Run(string(platform), func(t *testing.T) {
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			}
+
+			// Create CRIOCredentialProviderConfig with match images
+			criocpconfig := newCrioCredentialProviderConfig(
+				ctrlcommon.CRIOCredentialProviderConfigInstanceName,
+				[]string{"quay.io", "*.example.com"},
+			)
+
+			// Run bootstrap
+			mcs, err := RunCRIOCredentialProviderConfigBootstrap("../../../templates", cc, pools, criocpconfig)
+			require.NoError(t, err, "RunCRIOCredentialProviderConfigBootstrap failed for platform %s", platform)
+
+			require.Len(t, mcs, len(pools), "Expected one MachineConfig per pool for platform %s", platform)
+
+			verifyOpts := criocpVerifyOptions{
+				expectNilContent:   false,
+				expectEmptyEntries: false,
+			}
+
+			for i, pool := range pools {
+				key, err := getManagedKeyCRIOCredentialProvider(pool)
+				require.NoError(t, err, "getManagedKeyCRIOCredentialProvider should not error for pool %s", pool.Name)
+
+				verifyCRIOCredentialProviderConfigContents(t, mcs[i], key, criocpconfig, verifyOpts)
+			}
+		})
+	}
+}
+
+func TestRunCRIOCredentialProviderConfigBootstrapWithEmptyMatchImages(t *testing.T) {
+
+	platforms := []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
+		apicfgv1.GCPPlatformType,
+		apicfgv1.AzurePlatformType,
+	}
+
+	for _, platform := range platforms {
+		t.Run("with_empty_match_images", func(t *testing.T) {
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			}
+
+			// Create CRIOCredentialProviderConfig with empty match images (spec: {})
+			criocpconfig := newCrioCredentialProviderConfig(
+				ctrlcommon.CRIOCredentialProviderConfigInstanceName,
+				[]string{},
+			)
+
+			// Run bootstrap
+			mcs, err := RunCRIOCredentialProviderConfigBootstrap("../../../templates", cc, pools, criocpconfig)
+			require.NoError(t, err, "RunCRIOCredentialProviderConfigBootstrap should handle empty match images for platform %s", platform)
+			require.Len(t, mcs, len(pools), "Expected one MachineConfig per pool even with empty match images for platform %s", platform)
+
+			verifyOpts := criocpVerifyOptions{
+				expectNilContent:   true,
+				expectEmptyEntries: true,
+			}
+
+			for i, pool := range pools {
+				key, err := getManagedKeyCRIOCredentialProvider(pool)
+				require.NoError(t, err, "getManagedKeyCRIOCredentialProvider should not error for pool %s", pool.Name)
+
+				verifyCRIOCredentialProviderConfigContents(t, mcs[i], key, criocpconfig, verifyOpts)
+			}
+
+		})
+	}
+
+}
+
+func TestRunCRIOCredentialProviderConfigBootstrapWithEmptyMatchImagesNonePlatform(t *testing.T) {
+	t.Run("with_empty_match_images", func(t *testing.T) {
+		cc := newControllerConfig(ctrlcommon.ControllerConfigName, apicfgv1.NonePlatformType)
+		pools := []*mcfgv1.MachineConfigPool{
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+		}
+
+		// Create CRIOCredentialProviderConfig with empty match images (spec: {})
+		criocpconfig := newCrioCredentialProviderConfig(
+			ctrlcommon.CRIOCredentialProviderConfigInstanceName,
+			[]string{},
+		)
+
+		// Run bootstrap
+		mcs, err := RunCRIOCredentialProviderConfigBootstrap("../../../templates", cc, pools, criocpconfig)
+
+		// Should still generate MachineConfigs for generic platform path injection
+		require.NoError(t, err, "RunCRIOCredentialProviderConfigBootstrap should handle empty match images")
+		require.NotEmpty(t, mcs, "Expected MachineConfigs even with empty match images")
+
+		verifyOpts := criocpVerifyOptions{
+			expectNilContent:   false,
+			expectEmptyEntries: true,
+		}
+
+		for i, pool := range pools {
+			key, err := getManagedKeyCRIOCredentialProvider(pool)
+			require.NoError(t, err, "getManagedKeyCRIOCredentialProvider should not error for pool %s", pool.Name)
+
+			verifyCRIOCredentialProviderConfigContents(t, mcs[i], key, criocpconfig, verifyOpts)
+		}
+	})
+}

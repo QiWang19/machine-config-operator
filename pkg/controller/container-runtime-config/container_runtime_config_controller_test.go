@@ -650,8 +650,25 @@ func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcNam
 	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(updatedMC.Spec.Config.Raw)
+	verifyCRIOCredentialProviderConfigContents(t, updatedMC, mcName, criocp, criocpVerifyOptions{expectNilContent: false, expectEmptyEntries: false})
+}
+
+type criocpVerifyOptions struct {
+	expectNilContent   bool
+	expectEmptyEntries bool
+}
+
+func verifyCRIOCredentialProviderConfigContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, criocp *apicfgv1alpha1.CRIOCredentialProviderConfig, verifyOpts criocpVerifyOptions) {
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	require.NoError(t, err)
+
+	if verifyOpts.expectNilContent {
+		if len(ignCfg.Storage.Files) != 0 {
+			t.Fatalf("expected no content in the CRIO credential provider config file")
+		}
+		return
+	}
 
 	// find any file under /etc/kubernetes/credential-providers and validate it contains the crio provider entry
 	// under the precondition that the criocp.Spec.MatchImages should have at least one entry
@@ -666,6 +683,13 @@ func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcNam
 
 		credObj, err := credProviderConfigObject(contents)
 		require.NoError(t, err)
+
+		if verifyOpts.expectEmptyEntries {
+			if len(credObj.Providers) != 0 {
+				t.Fatalf("expected no providers in the CRIO credential provider config file, but found some")
+			}
+			return
+		}
 
 		for _, provider := range credObj.Providers {
 			if provider.Name != crioCredentialProviderName {
@@ -688,7 +712,10 @@ func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcNam
 		}
 	}
 	if !found {
+		// if !verifyOpts.expectNilContent {
 		t.Fatalf("did not find %s provider with expected matchImages in MachineConfig %s", crioCredentialProviderName, mcName)
+		// }
+
 	}
 }
 
