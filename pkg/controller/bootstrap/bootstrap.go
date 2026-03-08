@@ -114,6 +114,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imageStream          *imagev1.ImageStream
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
+		criocpconfig         *apicfgv1alpha1.CRIOCredentialProviderConfig
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -167,6 +168,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				clusterImagePolicies = append(clusterImagePolicies, obj)
 			case *apicfgv1.ImagePolicy:
 				imagePolicies = append(imagePolicies, obj)
+			case *apicfgv1alpha1.CRIOCredentialProviderConfig:
+				if obj.GetName() == ctrlcommon.CRIOCredentialProviderConfigInstanceName {
+					criocpconfig = obj
+				}
 			case *apicfgv1.FeatureGate:
 				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
 					featureGate = obj
@@ -261,6 +266,18 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, containerRuntimeConfigs...)
 	}
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
+
+	if criocpconfig == nil {
+		criocpconfig = &apicfgv1alpha1.CRIOCredentialProviderConfig{
+			Spec: &apicfgv1alpha1.CRIOCredentialProviderConfigSpec{},
+		}
+	}
+	criocpConfigs, err := containerruntimeconfig.RunCRIOCredentialProviderConfigBootstrap(b.templatesDir, cconfig, pools, criocpconfig)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, criocpConfigs...)
+	klog.Infof("Successfully generated MachineConfigs from CRIOCredentialProviderConfig.")
 
 	if featureGate != nil {
 		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer)

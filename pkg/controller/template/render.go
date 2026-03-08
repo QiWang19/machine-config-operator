@@ -464,7 +464,7 @@ func credentialProviderConfigFlag(cfg RenderConfig) interface{} {
 	case configv1.AzurePlatformType:
 		return fmt.Sprintf("%s %s%s", credentialProviderBinDirFlag, credentialProviderConfigFlag, "acr-credential-provider.yaml")
 	default:
-		return ""
+		return fmt.Sprintf("%s %s%s", credentialProviderBinDirFlag, credentialProviderConfigFlag, "generic-credential-provider.yaml")
 	}
 }
 

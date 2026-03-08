@@ -3,6 +3,8 @@ package containerruntimeconfig
 import (
 	"fmt"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -97,4 +99,36 @@ func generateBootstrapManagedKeyContainerConfig(pool *mcfgv1.MachineConfigPool, 
 	}
 	managedKeyExist[pool.Name] = true
 	return managedKey, nil
+}
+
+func RunCRIOCredentialProviderConfigBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+
+		managedKeyCredentialProvider, err := getManagedKeyCRIOCredentialProvider(pool)
+		if err != nil {
+			return nil, err
+		}
+
+		credentialProviderConfigIgn, err := crioCredentialProviderConfigIgnition(templateDir, controllerConfig, role, crioCredentialProviderConfig)
+		if err != nil {
+			return nil, err
+		}
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKeyCredentialProvider, credentialProviderConfigIgn)
+		if err != nil {
+			return nil, err
+		}
+		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: apicfgv1.SchemeGroupVersion.String(),
+				Kind:       CRIOCredentialProviderConfigKind.Kind,
+				// Name and UID is not set, the first run of syncCRIOCredentialProviderConfig will overwrite these values.
+			},
+		}
+		res = append(res, mc)
+	}
+
+	return res, nil
 }

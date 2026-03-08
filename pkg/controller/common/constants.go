@@ -69,6 +69,9 @@ const (
 	// InternalReleaseImageInstanceName is a singleton name for InternalReleaseImage
 	InternalReleaseImageInstanceName = "cluster"
 
+	// CRIOCredentialProviderConfigInstanceName is a singleton name for CRIOCredentialProviderConfig
+	CRIOCredentialProviderConfigInstanceName = "cluster"
+
 	// InternalReleaseImageTLSSecretName is the name of the secret manifest containing the InternalReleaseImage TLS certificate.
 	InternalReleaseImageTLSSecretName = "internal-release-image-tls"
 
