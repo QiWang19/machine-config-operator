@@ -27,6 +27,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	features "github.com/openshift/api/features"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -235,6 +236,13 @@ func (b *Bootstrap) Run(destDir string) error {
 	fgHandler, err := ctrlcommon.NewFeatureGatesCRHandlerImpl(featureGate, version.ReleaseVersion)
 	if err != nil {
 		return fmt.Errorf("error creating feature gates handler: %w", err)
+	}
+
+	if !fgHandler.Enabled(features.FeatureGateTLSGroupPreferences) {
+		apiServer = pruneTLSGroups(apiServer)
+		for i, kc := range kconfigs {
+			kconfigs[i] = pruneKubeletConfigTLSGroups(kc)
+		}
 	}
 
 	// Deduplicate pools to avoid generated ones conflict with user overrides
@@ -711,4 +719,34 @@ func validatePreBuiltImage(imageSpec string) error {
 	}
 
 	return nil
+}
+
+// pruneTLSGroups returns a copy of the APIServer with tlsSecurityProfile.custom.groups
+// cleared. Used during bootstrap to stand in for the CRD pruning that only happens
+// when the object goes through the API server.
+func pruneTLSGroups(apiServer *apicfgv1.APIServer) *apicfgv1.APIServer {
+	if apiServer == nil || apiServer.Spec.TLSSecurityProfile == nil || apiServer.Spec.TLSSecurityProfile.Custom == nil {
+		return apiServer
+	}
+	if len(apiServer.Spec.TLSSecurityProfile.Custom.Groups) == 0 {
+		return apiServer
+	}
+	klog.Warningf("Ignoring tlsSecurityProfile.custom.groups in the bootstrap APIServer manifest: the %s FeatureGate is not enabled", features.FeatureGateTLSGroupPreferences)
+	out := apiServer.DeepCopy()
+	out.Spec.TLSSecurityProfile.Custom.Groups = nil
+	return out
+}
+
+// pruneKubeletConfigTLSGroups is pruneTLSGroups for a KubeletConfig CR.
+func pruneKubeletConfigTLSGroups(kc *mcfgv1.KubeletConfig) *mcfgv1.KubeletConfig {
+	if kc == nil || kc.Spec.TLSSecurityProfile == nil || kc.Spec.TLSSecurityProfile.Custom == nil {
+		return kc
+	}
+	if len(kc.Spec.TLSSecurityProfile.Custom.Groups) == 0 {
+		return kc
+	}
+	klog.Warningf("Ignoring tlsSecurityProfile.custom.groups in bootstrap KubeletConfig %q: the %s FeatureGate is not enabled", kc.Name, features.FeatureGateTLSGroupPreferences)
+	out := kc.DeepCopy()
+	out.Spec.TLSSecurityProfile.Custom.Groups = nil
+	return out
 }

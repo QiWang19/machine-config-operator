@@ -1000,6 +1000,12 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
+			name: "test banned tlsCurvePreferences",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				TLSCurvePreferences: []int32{4588},
+			},
+		},
+		{
 			name: "test banned swapBehavior",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				MemorySwap: kubeletconfigv1beta1.MemorySwapConfiguration{
@@ -1692,6 +1698,24 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Custom TLS profile with groups",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{
+						Type: osev1.TLSProfileCustomType,
+						Custom: &osev1.CustomTLSProfile{
+							TLSProfileSpec: osev1.TLSProfileSpec{
+								Ciphers:       []string{"TLS_AES_128_GCM_SHA256"},
+								MinTLSVersion: osev1.VersionTLS13,
+								Groups:        []osev1.TLSGroup{osev1.TLSGroupX25519MLKEM768, osev1.TLSGroupX25519},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range TestCases {
@@ -1724,6 +1748,15 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 
 			require.Equal(t, originalKubeConfig.TLSCipherSuites, expectedTLSCipherSuites)
 			require.Equal(t, originalKubeConfig.TLSMinVersion, expectedTLSMinVersion)
+
+			var expectedTLSCurvePreferences []int32
+			if testCase.apiserver != nil {
+				expectedTLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(testCase.apiserver.Spec.TLSSecurityProfile)
+			}
+			require.Equal(t, expectedTLSCurvePreferences, originalKubeConfig.TLSCurvePreferences)
+			if expectedTLSCurvePreferences == nil {
+				require.NotContains(t, string(contents), "tlsCurvePreferences")
+			}
 		})
 	}
 }
